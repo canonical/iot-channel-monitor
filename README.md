@@ -24,6 +24,7 @@ example:
 
 - <part name>:
     arch: arm64/armhf/x86
+    track: <snap track>
     channel: stable/candidate/beta/edge
     name: <snap name>
     jira_id: <epic card ID>

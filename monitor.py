@@ -30,8 +30,8 @@ class monitor:
         with open("monitor.yaml", 'w') as file:
             yaml.dump(self._data, file)
 
-    def snap_rev(self, name, channel, arch):
-        return  self._snap_data[name]["latest"][channel][arch]["revision"]
+    def snap_rev(self, name, track, channel, arch):
+        return  self._snap_data[name][track][channel][arch]["revision"]
 
     def run_remote_job(self, job, issue, assignee):
         parameters={"":""}
@@ -75,10 +75,11 @@ class monitor:
         for data in self._data:
             snap_item = list(data.values())[0]
             snap = snap_item["name"]
+            track = snap_item["track"]
             channel = snap_item["channel"]
             arch = snap_item["arch"]
             jira_id = snap_item["jira_id"]
-            rev = self.snap_rev(snap, channel, arch)
+            rev = self.snap_rev(snap, track, channel, arch)
 
             print(f"snap: {snap} channel: {channel} revision: {rev} ")
 
