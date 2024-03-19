@@ -38,7 +38,7 @@ class monitor:
         next_build_number = self.jenkins_server.get_job_info(job)['nextBuildNumber']
 
         try:
-            self.jenkins_server.build_job(job, parameters=parameters, token="iot-oem")
+            self.jenkins_server.build_job(job, parameters=parameters, token=os.getenv('JOB_TOKEN'))
         except Exception as e:
             print(f'Failed to trigger test job {job}')
             return
