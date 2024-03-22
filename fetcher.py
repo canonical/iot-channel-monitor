@@ -2,14 +2,21 @@ import yaml
 import requests
 import sys
 
+
 def dump_sanp_data():
+    """Fetch snap information from SNAP store
+
+    Returns:
+        dict: the SNAP information for specific snaps
+    """
     with open("snaps.yaml") as f:
         snap_data = yaml.safe_load(f)
         SNAPS = [(k, snap_data[k]["store"]) for k in snap_data.keys()]
 
     mysnapdict = dict()
     for snap, store in SNAPS:
-        url = "https://api.snapcraft.io/v2/snaps/info/{}?fields=version,revision,snap-yaml".format(snap)
+        url = ("https://api.snapcraft.io/v2/snaps/info/"
+               "{}?fields=version,revision,snap-yaml".format(snap))
         headers = {"Snap-Device-Series": "16",
                    "Snap-Device-Store": store}
         a = requests.get(url, headers=headers)
