@@ -72,7 +72,7 @@ class Monitor:
         """
         return self._snap_data[name][track][channel][arch]["revision"]
 
-    def run_remote_job(self, job, job_token, issue, assignee):
+    def run_remote_job(self, job, job_token, issue, assignee, timeout):
         """
         Trigger a testing job in Jenkins
 
@@ -104,7 +104,7 @@ class Monitor:
                 time.sleep(3)
 
         started = time.time()
-        while not build_info["result"] and time.time() - started < 3600:
+        while not build_info["result"] and time.time() - started < timeout:
             time.sleep(10)
             build_info = self.jenkins_server.get_build_info(job,
                                                             next_build_number)
@@ -141,7 +141,6 @@ class Monitor:
             print(f"snap: {snap} channel: {channel} revision: {rev} ")
 
             # if revision not exist on jira under snap epic
-            # if revision not exist on jira under snap epic
             jira_issues = json.dumps(self.auth_jira.search_issues(
                 "project=OST", startAt=0, json_result=True))
             if re.search(f"{snap}-rev{rev}", jira_issues) is None:
@@ -167,7 +166,8 @@ class Monitor:
                     task = threading.Thread(
                         target=self.run_remote_job,
                         args=(proj["job"], proj["job_token"],
-                              new_platform, proj["assignee"])
+                              new_platform, proj["assignee"],
+                              proj.get("timeout", 7200))
                     )
                     task.start()
                     threads.append(task)
