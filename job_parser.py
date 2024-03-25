@@ -4,6 +4,7 @@ import yaml
 import jsonschema
 from jsonschema import validate
 
+
 DATA_SCHEMA = {
     "type": "array",
     "minItems": 1,
@@ -22,7 +23,7 @@ DATA_SCHEMA = {
                     "type": "array",
                     "minItems": 1,
                     "items": {
-                         "^.*$": {
+                        "^.*$": {
                             "type": "object",
                             "properties": {
                                 "name": {"type": "string"},
@@ -51,7 +52,19 @@ DATA_SCHEMA = {
 
 
 class DataParser:
+    """
+    This parser is for reading the channal monitor job and
+    ensure the data format is expected
+    """
     def __init__(self, file):
+        """Initial
+
+        Args:
+            file (str): the filename of the channal monitor job
+
+        Raises:
+            SystemExit: If file extension is not JSON or YAML
+        """
         _, ext = os.path.splitext(file)
         with open(file, "r") as fp:
             if ext == ".json":
@@ -67,9 +80,20 @@ class DataParser:
 
     @property
     def data(self):
+        """
+        the data property of this module
+
+        Returns:
+            dict: the data about channel monitor jobs
+        """
         return self._data
 
     def validate_data(self):
+        """Validate data by JSON schema
+
+        Raises:
+            ValueError: If data format is invalid
+        """
         try:
             validate(instance=self._data, schema=DATA_SCHEMA)
             print("the JSON data is valid")
