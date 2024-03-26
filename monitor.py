@@ -120,6 +120,10 @@ class Monitor:
                 self.auth_jira.add_comment(issue, report)
             except Exception:
                 self.auth_jira.add_comment(issue, "Test Failed")
+        elif not build_info["result"]:
+            self.auth_jira.add_comment(issue, "Test timeout")
+        else:
+            self.auth_jira.add_comment(issue, "Test Failed")
 
         self.auth_jira.assign_issue(issue, assignee)
 
