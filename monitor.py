@@ -145,10 +145,14 @@ class Monitor:
             print(f"snap: {snap} channel: {channel} revision: {rev} ")
 
             # if revision not exist on jira under snap epic
-            jira_issues = json.dumps(self.auth_jira.search_issues(
-                f"project=OST and summary ~ {snap}-rev{rev}", startAt=0, json_result=True))
+            jira_resp = self.auth_jira.search_issues(
+                f"project=OST and summary ~ {snap}-rev{rev}",
+                startAt=0,
+                json_result=True
+            )
+            jira_issues = jira_resp["issues"]
 
-            if not json.loads(jira_issues)["issues"]:
+            if not jira_issues:
                 new_revision = self.auth_jira.create_issue(
                     project="OST",
                     summary=f"{snap}-rev{rev}",
@@ -156,30 +160,41 @@ class Monitor:
                     issuetype={'name': 'Task'},
                     parent={'key': jira_id})
 
-                rev_key = (
-                    new_revision.raw['fields']['votes']['self']
-                ).split("/")[7]
+                rev_key = new_revision.key
             else:
-                rev_key = json.loads(jira_issues)["issues"][0]["key"]
+                rev_key = jira_issues[0]["key"]
 
             # handle projects under snap
             for proj in snap_item["projects"]:
                 # create platform jira card
-                jira_issues = json.dumps(self.auth_jira.search_issues(
-                    f'project=OST and summary ~ {proj["name"]}-rev{rev}', startAt=0, json_result=True))
-                if not json.loads(jira_issues)["issues"]:
-                    new_platform = self.auth_jira.create_issue(
+                jira_resp = self.auth_jira.search_issues(
+                    f'project=OST and summary ~ {proj["name"]}-rev{rev}',
+                    startAt=0, json_result=True
+                )
+                jira_issues = jira_resp["issues"]
+                if not jira_issues:
+                    platform = self.auth_jira.create_issue(
                         project="OST",
                         summary=f'{proj["name"]}-rev{rev}',
                         description='kernel monitor',
                         issuetype={'name': 'Sub-task'},
                         parent={'key': rev_key})
 
+                    issue_status = platform.fields.status.name
+                else:
+                    platform = jira_issues[0]["key"]
+                    issue_status = jira_issues[0]["fields"]["status"]["name"]
+
+                if issue_status.lower() in [
+                    "done", "in review", "to be deployed"
+                ]:
+                    print(f"The {platform} sanity task has been done")
+                    continue
                 # run platform sanity job
                 task = threading.Thread(
                     target=self.run_remote_job,
                     args=(proj["job"], proj["job_token"],
-                          new_platform, proj["assignee"],
+                          platform, proj["assignee"],
                           proj.get("timeout", 7200))
                 )
                 task.start()
