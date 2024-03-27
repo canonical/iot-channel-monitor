@@ -146,8 +146,9 @@ class Monitor:
 
             # if revision not exist on jira under snap epic
             jira_issues = json.dumps(self.auth_jira.search_issues(
-                "project=OST", startAt=0, json_result=True))
-            if re.search(f"{snap}-rev{rev}", jira_issues) is None:
+                f"project=OST and summary ~ {snap}-rev{rev}", startAt=0, json_result=True))
+
+            if not json.loads(jira_issues)["issues"]:
                 new_revision = self.auth_jira.create_issue(
                     project="OST",
                     summary=f"{snap}-rev{rev}",
@@ -158,23 +159,31 @@ class Monitor:
                 rev_key = (
                     new_revision.raw['fields']['votes']['self']
                 ).split("/")[7]
+            else:
+                rev_key = json.loads(jira_issues)["issues"][0]["key"]
 
-                # handle projects under snap
-                for proj in snap_item["projects"]:
+            # handle projects under snap
+            for proj in snap_item["projects"]:
+                # create platform jira card
+                jira_issues = json.dumps(self.auth_jira.search_issues(
+                    f'project=OST and summary ~ {proj["name"]}-rev{rev}', startAt=0, json_result=True))
+                if not json.loads(jira_issues)["issues"]:
                     new_platform = self.auth_jira.create_issue(
                         project="OST",
-                        summary=proj["name"],
+                        summary=f'{proj["name"]}-rev{rev}',
                         description='kernel monitor',
                         issuetype={'name': 'Sub-task'},
                         parent={'key': rev_key})
-                    task = threading.Thread(
-                        target=self.run_remote_job,
-                        args=(proj["job"], proj["job_token"],
-                              new_platform, proj["assignee"],
-                              proj.get("timeout", 7200))
-                    )
-                    task.start()
-                    threads.append(task)
+
+                # run platform sanity job
+                task = threading.Thread(
+                    target=self.run_remote_job,
+                    args=(proj["job"], proj["job_token"],
+                          new_platform, proj["assignee"],
+                          proj.get("timeout", 7200))
+                )
+                task.start()
+                threads.append(task)
 
         for x in threads:
             x.join()
