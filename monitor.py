@@ -86,6 +86,7 @@ class Monitor:
         next_build_number = job_info['nextBuildNumber']
 
         try:
+            self.auth_jira.transition_issue(issue, "In Progress")
             self.jenkins_server.build_job(job, parameters=parameters,
                                           token=job_token)
         except Exception:
@@ -118,6 +119,7 @@ class Monitor:
                     r"(?P<url>https?://certification.canonical.com[^\s]+)",
                     log).group("url")
                 self.auth_jira.add_comment(issue, report)
+                self.auth_jira.transition_issue(issue, "In Review")
             except Exception:
                 self.auth_jira.add_comment(issue, "Test Failed")
         elif not build_info["result"]:
