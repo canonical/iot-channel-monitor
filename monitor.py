@@ -162,9 +162,19 @@ class Monitor:
                     issuetype={'name': 'Task'},
                     parent={'key': jira_id})
 
+                self.auth_jira.transition_issue(new_revision, "In Progress")
                 rev_key = new_revision.key
             else:
                 rev_key = jira_issues[0]["key"]
+                issue_status = jira_issues[0]["fields"]["status"]["name"]
+
+                if issue_status.lower() in [
+                    "done", "to be deployed"
+                ]:
+                    print(f"The {rev_key} sanity task has been done")
+                    continue
+
+
 
             # handle projects under snap
             for proj in snap_item["projects"]:
@@ -187,11 +197,12 @@ class Monitor:
                     platform = jira_issues[0]["key"]
                     issue_status = jira_issues[0]["fields"]["status"]["name"]
 
-                if issue_status.lower() in [
-                    "done", "in review", "to be deployed"
-                ]:
-                    print(f"The {platform} sanity task has been done")
-                    continue
+                    if issue_status.lower() in [
+                        "done", "in review", "to be deployed"
+                    ]:
+                        print(f"The {platform} sanity task has been done")
+                        continue
+
                 # run platform sanity job
                 task = threading.Thread(
                     target=self.run_remote_job,
@@ -202,5 +213,7 @@ class Monitor:
                 task.start()
                 threads.append(task)
 
-        for x in threads:
-            x.join()
+            for x in threads:
+                x.join()
+
+            self.auth_jira.transition_issue(rev_key, "In Review")
