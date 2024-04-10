@@ -72,7 +72,7 @@ class Monitor:
         """
         return self._snap_data[name][track][channel][arch]["revision"]
 
-    def run_remote_job(self, job, job_token, issue, assignee):
+    def run_remote_job(self, job, job_token, issue, assignee, timeout):
         """
         Trigger a testing job in Jenkins
 
@@ -86,6 +86,7 @@ class Monitor:
         next_build_number = job_info['nextBuildNumber']
 
         try:
+            self.auth_jira.transition_issue(issue, "In Progress")
             self.jenkins_server.build_job(job, parameters=parameters,
                                           token=job_token)
         except Exception:
@@ -104,7 +105,7 @@ class Monitor:
                 time.sleep(3)
 
         started = time.time()
-        while not build_info["result"] and time.time() - started < 3600:
+        while not build_info["result"] and time.time() - started < timeout:
             time.sleep(10)
             build_info = self.jenkins_server.get_build_info(job,
                                                             next_build_number)
@@ -118,8 +119,13 @@ class Monitor:
                     r"(?P<url>https?://certification.canonical.com[^\s]+)",
                     log).group("url")
                 self.auth_jira.add_comment(issue, report)
+                self.auth_jira.transition_issue(issue, "In Review")
             except Exception:
                 self.auth_jira.add_comment(issue, "Test Failed")
+        elif not build_info["result"]:
+            self.auth_jira.add_comment(issue, "Test timeout")
+        else:
+            self.auth_jira.add_comment(issue, "Test Failed")
 
         self.auth_jira.assign_issue(issue, assignee)
 
@@ -141,10 +147,14 @@ class Monitor:
             print(f"snap: {snap} channel: {channel} revision: {rev} ")
 
             # if revision not exist on jira under snap epic
-            # if revision not exist on jira under snap epic
-            jira_issues = json.dumps(self.auth_jira.search_issues(
-                "project=OST", startAt=0, json_result=True))
-            if re.search(f"{snap}-rev{rev}", jira_issues) is None:
+            jira_resp = self.auth_jira.search_issues(
+                f"project=OST and summary ~ {snap}-rev{rev}",
+                startAt=0,
+                json_result=True
+            )
+            jira_issues = jira_resp["issues"]
+
+            if not jira_issues:
                 new_revision = self.auth_jira.create_issue(
                     project="OST",
                     summary=f"{snap}-rev{rev}",
@@ -152,25 +162,45 @@ class Monitor:
                     issuetype={'name': 'Task'},
                     parent={'key': jira_id})
 
-                rev_key = (
-                    new_revision.raw['fields']['votes']['self']
-                ).split("/")[7]
+                rev_key = new_revision.key
+            else:
+                rev_key = jira_issues[0]["key"]
 
-                # handle projects under snap
-                for proj in snap_item["projects"]:
-                    new_platform = self.auth_jira.create_issue(
+            # handle projects under snap
+            for proj in snap_item["projects"]:
+                # create platform jira card
+                jira_resp = self.auth_jira.search_issues(
+                    f'project=OST and summary ~ {proj["name"]}-rev{rev}',
+                    startAt=0, json_result=True
+                )
+                jira_issues = jira_resp["issues"]
+                if not jira_issues:
+                    platform = self.auth_jira.create_issue(
                         project="OST",
-                        summary=proj["name"],
+                        summary=f'{proj["name"]}-rev{rev}',
                         description='kernel monitor',
                         issuetype={'name': 'Sub-task'},
                         parent={'key': rev_key})
-                    task = threading.Thread(
-                        target=self.run_remote_job,
-                        args=(proj["job"], proj["job_token"],
-                              new_platform, proj["assignee"])
-                    )
-                    task.start()
-                    threads.append(task)
+
+                    issue_status = platform.fields.status.name
+                else:
+                    platform = jira_issues[0]["key"]
+                    issue_status = jira_issues[0]["fields"]["status"]["name"]
+
+                if issue_status.lower() in [
+                    "done", "in review", "to be deployed"
+                ]:
+                    print(f"The {platform} sanity task has been done")
+                    continue
+                # run platform sanity job
+                task = threading.Thread(
+                    target=self.run_remote_job,
+                    args=(proj["job"], proj["job_token"],
+                          platform, proj["assignee"],
+                          proj.get("timeout", 7200))
+                )
+                task.start()
+                threads.append(task)
 
         for x in threads:
             x.join()
