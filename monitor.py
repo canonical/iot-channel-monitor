@@ -169,7 +169,7 @@ class Monitor:
                 issue_status = jira_issues[0]["fields"]["status"]["name"]
 
                 if issue_status.lower() in [
-                    "done", "to be deployed"
+                    "done", "to be deployed", "in review", "rejected"
                 ]:
                     print(f"The {rev_key} sanity task has been done")
                     continue
@@ -198,7 +198,7 @@ class Monitor:
                     issue_status = jira_issues[0]["fields"]["status"]["name"]
 
                     if issue_status.lower() in [
-                        "done", "in review", "to be deployed"
+                        "done", "in review", "rejected"
                     ]:
                         print(f"The {platform} sanity task has been done")
                         continue
