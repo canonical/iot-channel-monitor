@@ -5,6 +5,7 @@ import time
 import threading
 import re
 import json
+from io import StringIO
 
 from typing import TypedDict
 from jira import JIRA
@@ -110,22 +111,29 @@ class Monitor:
             build_info = self.jenkins_server.get_build_info(job,
                                                             next_build_number)
 
+        log = self.jenkins_server.get_build_console_output(
+                                                job, next_build_number)
+        attachment = StringIO()
+        attachment.write(log)
+        self.auth_jira.add_attachment(issue=issue, attachment=attachment, filename=f'{next_build_number}_log.txt')
+
         if build_info["result"] in ["SUCCESS", "UNSTABLE"]:
             print(f'Test job {job} was {build_info["result"]}')
-            log = self.jenkins_server.get_build_console_output(
-                                                job, next_build_number)
             try:
                 report = re.search(
                     r"(?P<url>https?://certification.canonical.com[^\s]+)",
                     log).group("url")
-                self.auth_jira.add_comment(issue, report)
+                self.auth_jira.add_comment(issue, f"{next_build_number} Passe {report}")
                 self.auth_jira.transition_issue(issue, "In Review")
             except Exception:
-                self.auth_jira.add_comment(issue, "Test Failed")
+                print(f'Test job {job} was success, but report not found')
+                self.auth_jira.add_comment(issue, f"{next_build_number} build Successfully, but report not found")
         elif not build_info["result"]:
-            self.auth_jira.add_comment(issue, "Test timeout")
+            print(f'Test job {job} was Timeout')
+            self.auth_jira.add_comment(issue, f"{next_build_number} Test timeout")
         else:
-            self.auth_jira.add_comment(issue, "Test Failed")
+            print(f'Test job {job} was Failed')
+            self.auth_jira.add_comment(issue, f"{next_build_number} Test Failed")
 
         self.auth_jira.assign_issue(issue, assignee)
 
