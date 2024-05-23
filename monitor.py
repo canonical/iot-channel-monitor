@@ -73,7 +73,7 @@ class Monitor:
         """
         return self._snap_data[name][track][channel][arch]["revision"]
 
-    def run_remote_job(self, job, job_token, issue, assignee, timeout):
+    def run_remote_job(self, job, job_token, issue, assignee, timeout, extra_snap):
         """
         Trigger a testing job in Jenkins
 
@@ -82,7 +82,7 @@ class Monitor:
             issue (str): jira issue
             assignee (str): an Jira user for assignee
         """
-        parameters = {"": ""}
+        parameters = {"EXTRA_SNAPS": extra_snap}
         job_info = self.jenkins_server.get_job_info(job)
         next_build_number = job_info['nextBuildNumber']
 
@@ -216,7 +216,8 @@ class Monitor:
                     target=self.run_remote_job,
                     args=(proj["job"], proj["job_token"],
                           platform, proj["assignee"],
-                          proj.get("timeout", 7200))
+                          proj.get("timeout", 7200),
+                          f"--snap={snap}={track}/{channel}")
                 )
                 task.start()
                 threads.append(task)
