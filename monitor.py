@@ -71,7 +71,10 @@ class Monitor:
         Returns:
             str: the revision of SNAP
         """
-        return self._snap_data[name][track][channel][arch]["revision"]
+        try:
+            return self._snap_data[name][track][channel][arch]["revision"]
+        except KeyError:
+            return -1
 
     def run_remote_job(self, job, job_token, issue, assignee, timeout, extra_snap):
         """
@@ -151,6 +154,10 @@ class Monitor:
             arch = snap_item["arch"]
             jira_id = snap_item["jira_id"]
             rev = self.snap_rev(snap, track, channel, arch)
+
+            if rev == -1:
+                print(f"No snap: {snap} info from store")
+                continue
 
             print(f"snap: {snap} channel: {channel} revision: {rev} ")
 
