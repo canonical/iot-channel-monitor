@@ -85,7 +85,7 @@ class Monitor:
             issue (str): jira issue
             assignee (str): an Jira user for assignee
         """
-        parameters = {"EXTRA_SNAPS": extra_snap}
+        parameters = {"d_grade": "true", "EXTRA_SNAPS": extra_snap}
         job_info = self.jenkins_server.get_job_info(job)
         next_build_number = job_info['nextBuildNumber']
 
