@@ -50,6 +50,7 @@ class Monitor:
 
         self._data = test_job_data
         self._snap_data = dump_sanp_data()
+        self._review = True
 
     def sync_yaml(self):
         """
@@ -130,12 +131,15 @@ class Monitor:
                 self.auth_jira.transition_issue(issue, "In Review")
             except Exception:
                 print(f'Test job {job} was success, but report not found')
+                self._review = False
                 self.auth_jira.add_comment(issue, f"{next_build_number} build Successfully, but report not found")
         elif not build_info["result"]:
             print(f'Test job {job} was Timeout')
+            self._review = False
             self.auth_jira.add_comment(issue, f"{next_build_number} Test timeout")
         else:
             print(f'Test job {job} was Failed')
+            self._review = False
             self.auth_jira.add_comment(issue, f"{next_build_number} Test Failed")
 
         self.auth_jira.assign_issue(issue, assignee)
@@ -231,5 +235,5 @@ class Monitor:
 
             for x in threads:
                 x.join()
-
-            self.auth_jira.transition_issue(rev_key, "In Review")
+            if self._review:
+                self.auth_jira.transition_issue(rev_key, "In Review")
