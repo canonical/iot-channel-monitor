@@ -1,3 +1,4 @@
+""" This Module is for checking Monitor yaml data format"""
 import os
 import json
 import yaml
@@ -12,6 +13,7 @@ DATA_SCHEMA = {
         "^.*$": {
             "type": "object",
             "properties": {
+                "store": {"type": "string"},
                 "arch": {
                     "type": "string",
                     "enum": ["arm64", "armhf", "x86"],
@@ -28,26 +30,23 @@ DATA_SCHEMA = {
                             "properties": {
                                 "name": {"type": "string"},
                                 "assignee": {"type": "string"},
-                                "job": {"type": "string"}
+                                "job": {"type": "string"},
                             },
-                            "required": [
-                                "name",
-                                "assginee",
-                                "job"
-                            ],
+                            "required": ["name", "assginee", "job"],
                         }
-                    }
-                }
+                    },
+                },
             },
             "required": [
+                "store",
                 "arch",
                 "channel",
                 "name",
                 "jira_id",
-                "projects"
+                "projects",
             ],
         }
-    }
+    },
 }
 
 
@@ -56,6 +55,7 @@ class DataParser:
     This parser is for reading the channal monitor job and
     ensure the data format is expected
     """
+
     def __init__(self, file):
         """Initial
 
@@ -66,7 +66,7 @@ class DataParser:
             SystemExit: If file extension is not JSON or YAML
         """
         _, ext = os.path.splitext(file)
-        with open(file, "r") as fp:
+        with open(file, "r", encoding="utf-8") as fp:
             if ext == ".json":
                 self._data = json.load(fp)
             elif ext in [".yaml", ".yml"]:
@@ -98,4 +98,4 @@ class DataParser:
             validate(instance=self._data, schema=DATA_SCHEMA)
             print("the JSON data is valid")
         except jsonschema.exceptions.ValidationError as err:
-            raise ValueError("the JSON data is invalid, err {}".format(err))
+            raise ValueError(f"the JSON data is invalid, err {err}") from err
