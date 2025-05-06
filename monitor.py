@@ -2,8 +2,6 @@
 
 import time
 import threading
-import re
-from io import StringIO
 from typing import TypedDict
 import jenkins
 from fetcher import dump_sanp_data
@@ -96,6 +94,8 @@ class Monitor:
         job_info = self.jenkins_server.get_job_info(job)
         next_build_number = job_info["nextBuildNumber"]
         ci_link = "/".join([ci_link, str(next_build_number)])
+        patch_exec(eid=eid, ci_link=ci_link, status="IN_PROGRESS")
+
         try:
             self.jenkins_server.build_job(
                 job, parameters=parameters, token=job_token
@@ -123,30 +123,12 @@ class Monitor:
                 job, next_build_number
             )
 
-        log = self.jenkins_server.get_build_console_output(
-            job, next_build_number
-        )
-        attachment = StringIO()
-        attachment.write(log)
-
         if build_info["result"] in ["SUCCESS", "UNSTABLE"]:
             print(f'Test job {job} was {build_info["result"]}')
-            try:
-                report = re.search(
-                    r"(?P<url>https?://certification.canonical.com[^\s]+)", log
-                ).group("url")
-                patch_exec(
-                    eid=eid,
-                    c3_link=report,
-                    ci_link=ci_link,
-                    status="COMPLETED",
-                )
-            except (re.error, TypeError, AttributeError):
-                print(f"Test job {job} was success, but report not found")
-                patch_exec(
-                    eid=eid, ci_link=ci_link, status="FAILED"
-                )
-
+            patch_exec(
+                eid=eid,
+                status="PASSED",
+            )
         elif not build_info["result"]:
             print(f"Test job {job} was Timeout")
             patch_exec(eid=eid, ci_link=ci_link, status="FAILED")
