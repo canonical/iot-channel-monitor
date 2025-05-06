@@ -123,19 +123,19 @@ class Monitor:
                 job, next_build_number
             )
 
-        if build_info["result"] in ["SUCCESS", "UNSTABLE"]:
+        if build_info["result"] not in ["SUCCESS", "UNSTABLE"]:
             print(f'Test job {job} was {build_info["result"]}')
             patch_exec(
                 eid=eid,
-                status="PASSED",
+                status="FAILED",
             )
-        elif not build_info["result"]:
+        if not build_info["result"]:
             print(f"Test job {job} was Timeout")
-            patch_exec(eid=eid, ci_link=ci_link, status="FAILED")
+            patch_exec(eid=eid, status="FAILED")
 
         else:
             print(f"Test job {job} was Failed")
-            patch_exec(eid=eid, ci_link=ci_link, status="FAILED")
+            patch_exec(eid=eid, status="FAILED")
 
     # pylint: disable=R0912
     def start(self):
