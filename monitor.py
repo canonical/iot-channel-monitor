@@ -4,6 +4,7 @@ import time
 import threading
 from typing import TypedDict
 import jenkins
+import requests
 from fetcher import dump_sanp_data
 from testob_api import (
     start_exec,
@@ -91,18 +92,19 @@ class Monitor:
             cilink: execution CI link
         """
         parameters = {"d_grade": "true", "EXTRA_SNAPS": extra_snap}
-        job_info = self.jenkins_server.get_job_info(job)
-        next_build_number = job_info["nextBuildNumber"]
-        ci_link = "/".join([ci_link, str(next_build_number)])
-        patch_exec(eid=eid, ci_link=ci_link, status="IN_PROGRESS")
 
         try:
+            job_info = self.jenkins_server.get_job_info(job)
             self.jenkins_server.build_job(
                 job, parameters=parameters, token=job_token
             )
-        except jenkins.JenkinsException:
+        except (jenkins.JenkinsException, requests.exceptions.HTTPError):
             print("Failed to trigger {job}.")
             return
+
+        next_build_number = job_info["nextBuildNumber"]
+        ci_link = "/".join([ci_link, str(next_build_number)])
+        patch_exec(eid=eid, ci_link=ci_link, status="IN_PROGRESS")
 
         while True:
             try:
@@ -113,7 +115,7 @@ class Monitor:
                 )
                 break
 
-            except jenkins.JenkinsException:
+            except (jenkins.JenkinsException, requests.exceptions.HTTPError):
                 time.sleep(3)
 
         started = time.time()
