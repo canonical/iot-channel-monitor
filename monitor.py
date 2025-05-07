@@ -221,7 +221,7 @@ class Monitor:
                     )
                     if eid == -1:
                         print(f'Failed to create {proj["name"]}')
-                        return
+                        continue
 
                     print(f'Create {proj["name"]}. Execution ID: {eid}')
 
