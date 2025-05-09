@@ -1,30 +1,24 @@
-#!/usr/bin/env python3
-import yaml
-import jenkins
+"""Channel Monitor main module"""
+
 import time
 import threading
-import re
-import json
-from io import StringIO
-
 from typing import TypedDict
-from jira import JIRA
+import jenkins
+import requests
 from fetcher import dump_sanp_data
+from testob_api import (
+    start_exec,
+    patch_exec,
+    get_exec_results,
+    get_artefact_status,
+)
 
 
 class JenkinsServerInfo(TypedDict):
     """
     The JenkinsServerInfo data type
     """
-    server: str
-    username: str
-    password: str
 
-
-class JiraServerInfo(TypedDict):
-    """
-    The JiraServerInfo data type
-    """
     server: str
     username: str
     password: str
@@ -34,30 +28,38 @@ class Monitor:
     """
     The module to monitor snap changes
     """
-    def __init__(self,
-                 jenkins_server: JenkinsServerInfo,
-                 jira_server: JiraServerInfo,
-                 test_job_data: dict):
+
+    # pylint: disable=E1101
+    def __init__(self, jenkins_server: JenkinsServerInfo, test_job_data: dict):
         self.mutex = threading.Lock()
         self.jenkins_server = jenkins.Jenkins(
             jenkins_server["server"],
             username=jenkins_server["username"],
-            password=jenkins_server["password"])
-
-        self.auth_jira = JIRA(
-            server=jira_server["server"],
-            basic_auth=(jira_server["username"], jira_server["password"]))
+            password=jenkins_server["password"],
+        )
+        self.jenkins_link = jenkins_server["server"]
 
         self._data = test_job_data
         self._snap_data = dump_sanp_data()
         self._review = True
 
-    def sync_yaml(self):
+    def snap_version(self, name, track, channel, arch):
         """
-        Update monitor.yaml file
+        Get revision of snap
+
+        Args:
+            name (str): snap name
+            track (str): snap track
+            channel (str): snap channel
+            arch (str): snap architecture
+
+        Returns:
+            str: the revision of SNAP
         """
-        with open("monitor.yaml", 'w') as file:
-            yaml.dump(self._data, file)
+        try:
+            return self._snap_data[name][track][channel][arch]["version"]
+        except KeyError:
+            return -1
 
     def snap_rev(self, name, track, channel, arch):
         """
@@ -77,73 +79,67 @@ class Monitor:
         except KeyError:
             return -1
 
-    def run_remote_job(self, job, job_token, issue, assignee, timeout, extra_snap):
+    # pylint: disable=R0913, R0917, E1121
+    def run_remote_job(
+        self, job, job_token, timeout, extra_snap, eid, ci_link
+    ):
         """
         Trigger a testing job in Jenkins
 
         Args:
             job (str): job name
-            issue (str): jira issue
-            assignee (str): an Jira user for assignee
+            eid: TO execution ID
+            cilink: execution CI link
         """
         parameters = {"d_grade": "true", "EXTRA_SNAPS": extra_snap}
-        job_info = self.jenkins_server.get_job_info(job)
-        next_build_number = job_info['nextBuildNumber']
 
         try:
-            self.auth_jira.transition_issue(issue, "In Progress")
-            self.jenkins_server.build_job(job, parameters=parameters,
-                                          token=job_token)
-        except Exception:
-            print(f'Failed to trigger test job {job}')
+            job_info = self.jenkins_server.get_job_info(job)
+            self.jenkins_server.build_job(
+                job, parameters=parameters, token=job_token
+            )
+        except (jenkins.JenkinsException, requests.exceptions.HTTPError):
+            print("Failed to trigger {job}.")
             return
+
+        next_build_number = job_info["nextBuildNumber"]
+        ci_link = "/".join([ci_link, str(next_build_number)])
+        patch_exec(eid=eid, ci_link=ci_link, status="IN_PROGRESS")
 
         while True:
             try:
                 # try fetch job status
                 # it could be not created yet and cause exception
                 build_info = self.jenkins_server.get_build_info(
-                                                job, next_build_number)
+                    job, next_build_number
+                )
                 break
 
-            except Exception:
+            except (jenkins.JenkinsException, requests.exceptions.HTTPError):
                 time.sleep(3)
 
         started = time.time()
         while not build_info["result"] and time.time() - started < timeout:
             time.sleep(10)
-            build_info = self.jenkins_server.get_build_info(job,
-                                                            next_build_number)
+            build_info = self.jenkins_server.get_build_info(
+                job, next_build_number
+            )
 
-        log = self.jenkins_server.get_build_console_output(
-                                                job, next_build_number)
-        attachment = StringIO()
-        attachment.write(log)
-        self.auth_jira.add_attachment(issue=issue, attachment=attachment, filename=f'{next_build_number}_log.txt')
-
-        if build_info["result"] in ["SUCCESS", "UNSTABLE"]:
+        if build_info["result"] not in ["SUCCESS", "UNSTABLE"]:
             print(f'Test job {job} was {build_info["result"]}')
-            try:
-                report = re.search(
-                    r"(?P<url>https?://certification.canonical.com[^\s]+)",
-                    log).group("url")
-                self.auth_jira.add_comment(issue, f"{next_build_number} Passe {report}")
-                self.auth_jira.transition_issue(issue, "In Review")
-            except Exception:
-                print(f'Test job {job} was success, but report not found')
-                self._review = False
-                self.auth_jira.add_comment(issue, f"{next_build_number} build Successfully, but report not found")
-        elif not build_info["result"]:
-            print(f'Test job {job} was Timeout')
-            self._review = False
-            self.auth_jira.add_comment(issue, f"{next_build_number} Test timeout")
+            patch_exec(
+                eid=eid,
+                status="FAILED",
+            )
+        if not build_info["result"]:
+            print(f"Test job {job} was Timeout")
+            patch_exec(eid=eid, status="FAILED")
+
         else:
-            print(f'Test job {job} was Failed')
-            self._review = False
-            self.auth_jira.add_comment(issue, f"{next_build_number} Test Failed")
+            print(f"Test job {job} was Failed")
+            patch_exec(eid=eid, status="FAILED")
 
-        self.auth_jira.assign_issue(issue, assignee)
-
+    # pylint: disable=R0912
     def start(self):
         """
         Start to monitor snap changes
@@ -152,88 +148,104 @@ class Monitor:
         # Handle snaps in yaml
         for data in self._data:
             snap_item = list(data.values())[0]
-            snap = snap_item["name"]
-            track = snap_item["track"]
-            channel = snap_item["channel"]
-            arch = snap_item["arch"]
-            jira_id = snap_item["jira_id"]
-            rev = self.snap_rev(snap, track, channel, arch)
+            rev = self.snap_rev(
+                snap_item["name"],
+                snap_item["track"],
+                snap_item["channel"],
+                snap_item["arch"],
+            )
 
-            if rev == -1:
-                print(f"No snap: {snap} info from store")
+            version = self.snap_version(
+                snap_item["name"],
+                snap_item["track"],
+                snap_item["channel"],
+                snap_item["arch"],
+            )
+
+            if rev == -1 or version == -1:
+                print(f'No snap: {snap_item["name"]} info from store')
                 continue
 
-            print(f"snap: {snap} channel: {channel} revision: {rev} ")
+            artefact = get_artefact_status(snap_item["name"], version, "snap")
+            if artefact["status"] == "EMPTY":
+                print("Artefact is not found, create new one")
+                results = []
+            elif artefact["status"] == "ERROR":
+                continue
 
-            # if revision not exist on jira under snap epic
-            jira_resp = self.auth_jira.search_issues(
-                f"project=OST and summary ~ {snap}-rev{rev}",
-                startAt=0,
-                json_result=True
-            )
-            jira_issues = jira_resp["issues"]
-
-            if not jira_issues:
-                new_revision = self.auth_jira.create_issue(
-                    project="OST",
-                    summary=f"{snap}-rev{rev}",
-                    description='kernel monitor',
-                    issuetype={'name': 'Task'},
-                    parent={'key': jira_id})
-
-                self.auth_jira.transition_issue(new_revision, "In Progress")
-                rev_key = new_revision.key
             else:
-                rev_key = jira_issues[0]["key"]
-                issue_status = jira_issues[0]["fields"]["status"]["name"]
-
-                if issue_status.lower() in [
-                    "done", "to be deployed", "in review", "rejected"
-                ]:
-                    print(f"The {rev_key} sanity task has been done")
+                print(
+                    f'Artefact {artefact["id"]} status is {artefact["status"]}'
+                )
+                if artefact["status"] != "UNDECIDED":
+                    print("Do Nothing")
                     continue
 
+                results = get_exec_results(artefact["id"])
 
+            print(
+                f'snap: {snap_item["name"]}, '
+                f'channel: {snap_item["channel"]}, '
+                f"version: {version}, "
+                f"revision: {rev}"
+            )
 
             # handle projects under snap
             for proj in snap_item["projects"]:
-                # create platform jira card
-                jira_resp = self.auth_jira.search_issues(
-                    f'project=OST and summary ~ {proj["name"]}-rev{rev}',
-                    startAt=0, json_result=True
-                )
-                jira_issues = jira_resp["issues"]
-                if not jira_issues:
-                    platform = self.auth_jira.create_issue(
-                        project="OST",
-                        summary=f'{proj["name"]}-rev{rev}',
-                        description='kernel monitor',
-                        issuetype={'name': 'Sub-task'},
-                        parent={'key': rev_key})
+                ci_link = f'{self.jenkins_link}job/{proj["job"]}'
+                env_data = None
+                if results:
+                    for env in (next(iter(results)))["test_executions"]:
+                        if proj["name"] == env["environment"]["name"]:
+                            env_data = env
+                            break
 
-                    issue_status = platform.fields.status.name
-                else:
-                    platform = jira_issues[0]["key"]
-                    issue_status = jira_issues[0]["fields"]["status"]["name"]
-
-                    if issue_status.lower() in [
-                        "done", "in review", "rejected", "untriaged"
+                if env_data:
+                    if env_data["status"] in [
+                        "COMPLETED",
+                        "PASSED",
+                        "ENDED_PREMATURELY",
                     ]:
-                        print(f"The {platform} sanity task has been done")
+                        print(f'The {proj["name"]} sanity task has been done')
                         continue
+                    eid = env_data["id"]
+                    print(
+                        f'{proj["name"]} exist, Execution ID: {eid}, start testing'
+                    )
+                else:
+                    eid = start_exec(
+                        name=snap_item["name"],
+                        version=version,
+                        revision=rev,
+                        arch=snap_item["arch"],
+                        env=proj["name"],
+                        test_plan=f'{proj["name"]}-auto',
+                        family="snap",
+                        track=snap_item["track"],
+                        store=snap_item["store"],
+                        stage=snap_item["channel"],
+                        ci_link="/".join([ci_link, version]),
+                    )
+                    if eid == -1:
+                        print(f'Failed to create {proj["name"]}')
+                        continue
+
+                    print(f'Create {proj["name"]}. Execution ID: {eid}')
 
                 # run platform sanity job
                 task = threading.Thread(
                     target=self.run_remote_job,
-                    args=(proj["job"], proj["job_token"],
-                          platform, proj["assignee"],
-                          proj.get("timeout", 7200),
-                          f"--snap={snap}={track}/{channel}")
+                    args=(
+                        proj["job"],
+                        proj["job_token"],
+                        proj.get("timeout", 7200),
+                        f'--snap={snap_item["name"]}={snap_item["track"]}/{snap_item["channel"]}',
+                        eid,
+                        ci_link,
+                    ),
                 )
                 task.start()
                 threads.append(task)
 
             for x in threads:
                 x.join()
-            if self._review:
-                self.auth_jira.transition_issue(rev_key, "In Review")
