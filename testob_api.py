@@ -43,7 +43,12 @@ def start_exec(
         "branch": branch,
         "execution_stage": stage,
     }
-    response = requests.put(url, json=payload, headers=headers, timeout=10)
+
+    try:
+        response = requests.put(url, json=payload, headers=headers, timeout=10)
+    except requests.exceptions.RequestException as e:
+        print(f"request casue exception {e}")
+        return -1
 
     if response.status_code == 200:
         data = response.json()
@@ -63,7 +68,13 @@ def patch_exec(eid="", c3_link=None, ci_link=None, status=""):
     }
 
     payload = {"c3_link": c3_link, "ci_link": ci_link, "status": status}
-    response = requests.patch(url, json=payload, headers=headers, timeout=10)
+    try:
+        response = requests.patch(
+            url, json=payload, headers=headers, timeout=10
+        )
+    except requests.exceptions.RequestException as e:
+        print(f"request casue exception {e}")
+        return -1
 
     if response.status_code == 200:
         return 0
@@ -75,7 +86,7 @@ def patch_exec(eid="", c3_link=None, ci_link=None, status=""):
 def get_exec_results(aid):
     """get execution result"""
     if not isinstance(aid, (str, int)):
-        return []
+        return None
 
     url = f"https://test-observer-api-staging.canonical.com/v1/artefacts/{aid}/builds"
     headers = {
@@ -83,9 +94,15 @@ def get_exec_results(aid):
         "Content-Type": "application/json",
     }
 
-    response = requests.get(url, headers=headers, timeout=10)
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+    except requests.exceptions.RequestException as e:
+        print(f"request casue exception {e}")
+        return None
+
     if response.status_code != 200:
-        raise ConnectionError("Failed to connect to the server")
+        print("get_exec_results Failed to connect to the server")
+        return None
 
     return json.loads(response.text)
 
@@ -93,20 +110,26 @@ def get_exec_results(aid):
 def get_artefact_status(name="", version="", family=""):
     """get artefact status"""
     url = f"https://test-observer-api-staging.canonical.com/v1/artefacts?family={family}"
+    result = {"status": "ERROR"}
     headers = {
         "accept": "application/json",
         "Content-Type": "application/json",
     }
 
-    response = requests.get(url, headers=headers, timeout=10)
-    if response.status_code != 200:
-        raise ConnectionError("Failed to connect to the server")
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+    except requests.exceptions.RequestException as e:
+        print(f"request casue exception {e}")
+        return result
 
-    result = None
+    if response.status_code != 200:
+        print("get_artefact_status Failed to connect to the server")
+        return result
+
+    result["status"] = "EMPTY"
     artefacts_datas = json.loads(response.text)
     for artefact in artefacts_datas:
         if artefact["name"] == name and artefact["version"] == version:
-            result = {}
             result["id"] = artefact["id"]
             result["status"] = artefact["status"]
             break

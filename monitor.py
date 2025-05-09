@@ -154,6 +154,7 @@ class Monitor:
                 snap_item["channel"],
                 snap_item["arch"],
             )
+
             version = self.snap_version(
                 snap_item["name"],
                 snap_item["track"],
@@ -161,10 +162,17 @@ class Monitor:
                 snap_item["arch"],
             )
 
+            if rev == -1 or version == -1:
+                print(f'No snap: {snap_item["name"]} info from store')
+                continue
+
             artefact = get_artefact_status(snap_item["name"], version, "snap")
-            if artefact is None:
+            if artefact["status"] == "EMPTY":
                 print("Artefact is not found, create new one")
                 results = []
+            elif artefact["status"] == "ERROR":
+                continue
+
             else:
                 print(
                     f'Artefact {artefact["id"]} status is {artefact["status"]}'
@@ -175,9 +183,6 @@ class Monitor:
 
                 results = get_exec_results(artefact["id"])
 
-            if rev == -1:
-                print(f'No snap: {snap_item["name"]} info from store')
-                continue
             print(
                 f'snap: {snap_item["name"]}, '
                 f'channel: {snap_item["channel"]}, '
