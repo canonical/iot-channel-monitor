@@ -7,8 +7,6 @@ import jenkins
 import requests
 from fetcher import dump_sanp_data
 from testob_api import (
-    start_exec,
-    patch_exec,
     get_exec_results,
     get_artefact_status,
 )
@@ -80,9 +78,7 @@ class Monitor:
             return -1
 
     # pylint: disable=R0913, R0917, E1121
-    def run_remote_job(
-        self, job, job_token, timeout, extra_snap, eid, ci_link
-    ):
+    def run_remote_job(self, job, job_token, timeout, extra_snap):
         """
         Trigger a testing job in Jenkins
 
@@ -91,6 +87,7 @@ class Monitor:
             eid: TO execution ID
             cilink: execution CI link
         """
+        build_info = None
         parameters = {"d_grade": "true", "EXTRA_SNAPS": extra_snap}
 
         try:
@@ -103,8 +100,6 @@ class Monitor:
             return
 
         next_build_number = job_info["nextBuildNumber"]
-        ci_link = "/".join([ci_link, str(next_build_number)])
-        patch_exec(eid=eid, ci_link=ci_link, status="IN_PROGRESS")
 
         while True:
             try:
@@ -125,19 +120,12 @@ class Monitor:
                 job, next_build_number
             )
 
-        if build_info["result"] not in ["SUCCESS", "UNSTABLE"]:
-            print(f'Test job {job} was {build_info["result"]}')
-            patch_exec(
-                eid=eid,
-                status="FAILED",
-            )
-        if not build_info["result"]:
-            print(f"Test job {job} was Timeout")
-            patch_exec(eid=eid, status="FAILED")
-
-        else:
+        if not build_info or not build_info["result"]:
             print(f"Test job {job} was Failed")
-            patch_exec(eid=eid, status="FAILED")
+
+        elif build_info["result"] not in ["SUCCESS", "UNSTABLE"]:
+            print(f'Test job {job} was {build_info["result"]}')
+
 
     # pylint: disable=R0912
     def start(self):
@@ -192,7 +180,6 @@ class Monitor:
 
             # handle projects under snap
             for proj in snap_item["projects"]:
-                ci_link = f'{self.jenkins_link}job/{proj["job"]}'
                 env_data = None
                 if results:
                     for env in (next(iter(results)))["test_executions"]:
@@ -208,29 +195,6 @@ class Monitor:
                     ]:
                         print(f'The {proj["name"]} sanity task has been done')
                         continue
-                    eid = env_data["id"]
-                    print(
-                        f'{proj["name"]} exist, Execution ID: {eid}, start testing'
-                    )
-                else:
-                    eid = start_exec(
-                        name=snap_item["name"],
-                        version=version,
-                        revision=rev,
-                        arch=snap_item["arch"],
-                        env=proj["name"],
-                        test_plan=f'{proj["name"]}-auto',
-                        family="snap",
-                        track=snap_item["track"],
-                        store=snap_item["store"],
-                        stage=snap_item["channel"],
-                        ci_link="/".join([ci_link, version]),
-                    )
-                    if eid == -1:
-                        print(f'Failed to create {proj["name"]}')
-                        continue
-
-                    print(f'Create {proj["name"]}. Execution ID: {eid}')
 
                 # run platform sanity job
                 task = threading.Thread(
@@ -240,8 +204,6 @@ class Monitor:
                         proj["job_token"],
                         proj.get("timeout", 7200),
                         f'--snap={snap_item["name"]}={snap_item["track"]}/{snap_item["channel"]}',
-                        eid,
-                        ci_link,
                     ),
                 )
                 task.start()
