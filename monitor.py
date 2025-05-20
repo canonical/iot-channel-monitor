@@ -78,7 +78,7 @@ class Monitor:
             return -1
 
     # pylint: disable=R0913, R0917, E1121
-    def run_remote_job(self, job, job_token, timeout, extra_snap):
+    def run_remote_job(self, job, job_token, timeout, extra_snap, under_test):
         """
         Trigger a testing job in Jenkins
 
@@ -88,7 +88,11 @@ class Monitor:
             cilink: execution CI link
         """
         build_info = None
-        parameters = {"d_grade": "true", "EXTRA_SNAPS": extra_snap}
+        parameters = {
+            "d_grade": "true",
+            "EXTRA_SNAPS": extra_snap,
+            "under_test": under_test,
+        }
 
         try:
             job_info = self.jenkins_server.get_job_info(job)
@@ -125,7 +129,6 @@ class Monitor:
 
         elif build_info["result"] not in ["SUCCESS", "UNSTABLE"]:
             print(f'Test job {job} was {build_info["result"]}')
-
 
     # pylint: disable=R0912
     def start(self):
@@ -197,6 +200,16 @@ class Monitor:
                         continue
 
                 # run platform sanity job
+                under_test = ":".join(
+                    [
+                        "snap",
+                        snap_item["name"],
+                        snap_item["track"],
+                        snap_item["channel"],
+                        version,
+                        rev,
+                    ]
+                )
                 task = threading.Thread(
                     target=self.run_remote_job,
                     args=(
@@ -204,6 +217,7 @@ class Monitor:
                         proj["job_token"],
                         proj.get("timeout", 7200),
                         f'--snap={snap_item["name"]}={snap_item["track"]}/{snap_item["channel"]}',
+                        under_test,
                     ),
                 )
                 task.start()
