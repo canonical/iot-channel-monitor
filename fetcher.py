@@ -15,10 +15,11 @@ def dump_sanp_data():
 
     mysnapdict = dict()
     for snap, store in SNAPS:
-        url = ("https://api.snapcraft.io/v2/snaps/info/"
-               "{}?fields=version,revision,snap-yaml".format(snap))
-        headers = {"Snap-Device-Series": "16",
-                   "Snap-Device-Store": store}
+        url = (
+            "https://api.snapcraft.io/v2/snaps/info/"
+            "{}?fields=version,revision,snap-yaml".format(snap)
+        )
+        headers = {"Snap-Device-Series": "16", "Snap-Device-Store": store}
         a = requests.get(url, headers=headers)
         j = a.json()
         if not hasattr(mysnapdict, snap):
@@ -53,4 +54,3 @@ def dump_sanp_data():
             mysnapdict[snap][track][risk][architecture]["grade"] = grade
 
     return mysnapdict
-
